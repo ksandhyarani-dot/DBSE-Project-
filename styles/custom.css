@@ -1,0 +1,27 @@
+/* Custom styles and animations for Online Voting System Academic Prototype */
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Ensure password bullets look clean and consistent */
+input[type="password"] {
+  letter-spacing: 0.15em;
+}
+
+/* Tabular figures for election numbers */
+.font-mono-numbers {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
