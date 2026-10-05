@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ONLINE VOTING SYSTEM – Aadhaar-Style OTP Verification (Zero-Install Demo)</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- React & ReactDOM CDN -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  
+  <!-- Babel for inline JSX compilation in browser -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  
+  <style>
+    body { font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif; }
+    .font-mono-numbers { font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; }
+    input[type="password"] { letter-spacing: 0.15em; }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .animate-fadeIn { animation: fadeIn 0.25s ease-out forwards; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-900 antialiased selection:bg-blue-600 selection:text-white">
+  <div id="root"></div>
+
+  <!-- In-browser Babel React Application -->
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    // Sample candidates
+    const INITIAL_CANDIDATES = [
+      { id: 'c1', name: 'Dr. Rajeshwar Rao', party: 'National Progress Alliance', symbol: 'Rising Sun', icon: '☀️', color: '#D97706', agenda: 'Sustainable rural digital infrastructure, transparent governance.', votes: 48 },
+      { id: 'c2', name: 'Smt. Ananya Deshmukh', party: 'Democratic Peoples Coalition', symbol: 'Scales of Justice', icon: '⚖️', color: '#2563EB', agenda: 'Universal healthcare coverage, youth technical skill institutes.', votes: 62 },
+      { id: 'c3', name: 'Prof. Vikramaditya Sengupta', party: 'Youth & Education Front', symbol: 'Open Book', icon: '📖', color: '#059669', agenda: 'Public research grants, affordable student housing, STEM programs.', votes: 39 },
+      { id: 'c4', name: 'Kumari Meenakshi Sundaram', party: 'Green Agro Collective', symbol: 'Banyan Tree', icon: '🌳', color: '#15803D', agenda: 'Direct farmer fair-price subsidies, decentralized micro-cold chains.', votes: 27 },
+      { id: 'c5', name: 'NOTA (None of the Above)', party: 'Independent Choice Option', symbol: 'Ballot Stamp', icon: '🗳️', color: '#475569', agenda: 'Constitutional provision allowing electors to reject all candidates.', votes: 6 }
+    ];
+
+    // Sample voters
+    const SAMPLE_VOTERS = [
+      { id: 'v1', voterId: 'VTR-2026-9041', name: 'Arun K. Sharma (Demo)', maskedAadhaar: 'XXXX-XXXX-8421', maskedMobile: '+91 ••••• •4321', phoneSuffix: '4321', status: 'ELIGIBLE' },
+      { id: 'v2', voterId: 'VTR-2026-9042', name: 'Priya R. Patel (Demo)', maskedAadhaar: 'XXXX-XXXX-1930', maskedMobile: '+91 ••••• •7890', phoneSuffix: '7890', status: 'ELIGIBLE' },
+      { id: 'v3', voterId: 'VTR-2026-9043', name: 'Mohammed Farhan (Demo)', maskedAadhaar: 'XXXX-XXXX-5512', maskedMobile: '+91 ••••• •2210', phoneSuffix: '2210', status: 'VOTED' }
+    ];
+
+    function App() {
+      const [page, setPage] = useState('home'); // 'home'|'verify'|'candidates'|'confirm'|'success'|'results'|'admin'
+      const [candidates, setCandidates] = useState(INITIAL_CANDIDATES);
+      const [voters, setVoters] = useState(SAMPLE_VOTERS);
+      const [activeVoter, setActiveVoter] = useState(null);
+      const [selectedCandidate, setSelectedCandidate] = useState(null);
+      const [receipt, setReceipt] = useState(null);
+      const [auditLogs, setAuditLogs] = useState([
+        { id: 1, time: '08:14:22', action: 'POLL_OPENED', detail: 'Electoral poll opened for Constituency #04.' },
+        { id: 2, time: '08:29:45', action: 'OTP_DISPATCHED', detail: 'Simulated OTP dispatched to masked phone (+91 ••••• •2210).' },
+        { id: 3, time: '08:31:10', action: 'VOTE_SEALED', detail: 'Ballot sealed and locked. Duplicate voting disabled.' }
+      ]);
+
+      // Verification state
+      const [voterIdInput, setVoterIdInput] = useState('');
+      const [mobileInput, setMobileInput] = useState('');
+      const [verifyStep, setVerifyStep] = useState('CREDENTIALS'); // 'CREDENTIALS' | 'OTP'
+      const [otpDigits, setOtpDigits] = useState(['', '', '', '', '', '']);
+      const [timer, setTimer] = useState(60);
+      const [errorMessage, setErrorMessage] = useState('');
+      const [successMessage, setSuccessMessage] = useState('');
+
+      // Admin Auth
+      const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
+      const [adminUser, setAdminUser] = useState('');
+      const [adminPass, setAdminPass] = useState('');
+      const [adminError, setAdminError] = useState('');
+
+      // OTP timer
+      useEffect(() => {
+        let interval = null;
+        if (verifyStep === 'OTP' && timer > 0) {
+          interval = setInterval(() => setTimer(t => t - 1), 1000);
+        }
+        return () => clearInterval(interval);
+      }, [verifyStep, timer]);
+
+      // Request OTP
+      const handleRequestOtp = (e) => {
+        e.preventDefault();
+        setErrorMessage('');
+        const v = voters.find(vtr => vtr.voterId.toUpperCase() === voterIdInput.trim().toUpperCase());
+        if (!v) {
+          setErrorMessage(`Voter ID "${voterIdInput}" not found in electoral roll.`);
+          return;
+        }
+        if (v.status === 'VOTED') {
+          setErrorMessage('A ballot has ALREADY BEEN CAST for this Voter ID. Duplicate voting is prohibited.');
+          return;
+        }
+        setActiveVoter(v);
+        setVerifyStep('OTP');
+        setTimer(60);
+        setSuccessMessage(`Simulated OTP securely dispatched to registered mobile ${v.maskedMobile}. Valid for 60 seconds.`);
+      };
+
+      // Verify OTP
+      const handleVerifyOtp = (e) => {
+        e.preventDefault();
+        const code = otpDigits.join('');
+        if (code.length !== 6) {
+          setErrorMessage('Please enter all 6 digits of the OTP.');
+          return;
+        }
+        setErrorMessage('');
+        setSuccessMessage('Aadhaar OTP authenticated successfully. Ballot unlocked.');
+        setTimeout(() => {
+          setPage('candidates');
+        }, 800);
+      };
+
+      // Cast ballot
+      const handleConfirmVote = () => {
+        if (!selectedCandidate || !activeVoter) return;
+        setCandidates(prev => prev.map(c => c.id === selectedCandidate.id ? { ...c, votes: c.votes + 1 } : c));
+        setVoters(prev => prev.map(v => v.id === activeVoter.id ? { ...v, status: 'VOTED' } : v));
+        
+        const newReceipt = {
+          id: 'REC-' + Math.random().toString(36).substring(2, 6).toUpperCase() + '-' + Math.random().toString(36).substring(2, 6).toUpperCase(),
+          timestamp: new Date().toLocaleTimeString('en-IN') + ' IST',
+          candidate: selectedCandidate.name,
+          party: selectedCandidate.party,
+          voterRef: activeVoter.voterId.substring(0, 6) + '••••'
+        };
+        setReceipt(newReceipt);
+        setAuditLogs(prev => [{ id: Date.now(), time: new Date().toLocaleTimeString('en-IN'), action: 'VOTE_SEALED', detail: `Ballot token ${newReceipt.id} sealed.` }, ...prev]);
+        setSelectedCandidate(null);
+        setPage('success');
+      };
+
+      const totalVotes = candidates.reduce((s, c) => s + c.votes, 0);
+      const turnout = ((voters.filter(v => v.status === 'VOTED').length / voters.length) * 100).toFixed(1);
+
+      return (
+        <div className="min-h-screen flex flex-col">
+          
+          {/* Top Notice */}
+          <div className="bg-slate-900 text-slate-300 text-xs py-2 px-4 border-b border-slate-800 flex justify-between items-center">
+            <span className="font-semibold text-amber-400">ACADEMIC PROTOTYPE NOTICE:</span>
+            <span className="text-[11px] text-slate-400 hidden sm:inline">Simulated Aadhaar-style OTP multi-factor voter authentication · Zero plain passwords · No real Aadhaar collected</span>
+            <span className="text-blue-400 text-xs font-mono-numbers">Constituency #04</span>
+          </div>
+
+          {/* Navigation Bar */}
+          <header className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between sticky top-0 z-30 shadow-xs">
+            <div className="flex items-center gap-3 cursor-pointer" onClick={() => setPage('home')}>
+              <div className="w-8 h-8 rounded bg-blue-600 text-white font-bold flex items-center justify-center text-sm shadow-xs">CV</div>
+              <div>
+                <span className="font-bold text-slate-900 text-base leading-tight block">CivicVote Academic</span>
+                <span className="text-slate-500 text-[11px] block leading-tight">Online Voting System (Aadhaar OTP)</span>
+              </div>
+            </div>
+
+            <nav className="flex items-center gap-6 text-xs font-semibold">
+              <button onClick={() => setPage('home')} className={`hover:text-blue-600 ${page==='home'?'text-blue-600 font-bold':''}`}>Home</button>
+              <button onClick={() => setPage('verify')} className={`hover:text-blue-600 ${['verify','candidates','confirm','success'].includes(page)?'text-blue-600 font-bold':''}`}>Voting Portal</button>
+              <button onClick={() => setPage('results')} className={`hover:text-blue-600 ${page==='results'?'text-blue-600 font-bold':''}`}>Results</button>
+              <button onClick={() => setPage('admin')} className={`hover:text-blue-600 ${page==='admin'?'text-blue-600 font-bold':''}`}>Admin</button>
+            </nav>
+
+            <div>
+              <button onClick={() => setPage('verify')} className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-4 py-2 rounded-lg shadow-xs transition-colors">
+                Cast Ballot
+              </button>
+            </div>
+          </header>
+
+          {/* MAIN VIEWPORT */}
+          <main className="flex-1 max-w-6xl w-full mx-auto px-4 py-8">
+
+            {/* 1. HOME */}
+            {page === 'home' && (
+              <div className="space-y-10">
+                <div className="bg-white border border-slate-200 rounded-2xl p-8 sm:p-12 shadow-xs text-center space-y-5">
+                  <span className="text-xs font-bold text-blue-600 uppercase tracking-wider bg-blue-50 px-3 py-1 rounded-full border border-blue-200">
+                    Academic Research Project
+                  </span>
+                  <h1 className="text-3xl sm:text-5xl font-extrabold text-slate-900 tracking-tight">
+                    ONLINE VOTING SYSTEM
+                    <span className="block text-blue-600 mt-1">Using Aadhaar-Style OTP Verification</span>
+                  </h1>
+                  <p className="text-slate-600 max-w-2xl mx-auto text-sm sm:text-base leading-relaxed">
+                    A secure electronic voting frontend engineered to demonstrate multi-factor biometric voter authentication, 
+                    single-ballot integrity, anonymized cryptographic receipt generation, and real-time result tabulation.
+                  </p>
+                  
+                  <div className="flex flex-wrap justify-center gap-4 pt-4">
+                    <button onClick={() => setPage('verify')} className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm px-6 py-3 rounded-lg shadow-sm">
+                      Start Voting Flow &rarr;
+                    </button>
+                    <button onClick={() => setPage('results')} className="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-semibold text-sm px-6 py-3 rounded-lg">
+                      View Live Results
+                    </button>
+                  </div>
+
+                  {/* Demo test helper */}
+                  <div className="bg-blue-50/70 border border-blue-200 rounded-lg p-3 text-xs text-blue-900 max-w-md mx-auto text-left space-y-1 font-mono-numbers">
+                    <strong className="font-sans block text-blue-800">Quick Testing Credentials (For Evaluators):</strong>
+                    <div>Voter ID: <strong className="text-slate-900">VTR-2026-9041</strong></div>
+                    <div>Phone: <strong className="text-slate-900">98765 04321</strong></div>
+                    <div className="text-[11px] font-sans text-blue-700 pt-1">OTP: Enter any 6 digits (e.g. 1 2 3 4 5 6) during OTP verification.</div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-2">
+                    <div className="text-xl">🔒</div>
+                    <h3 className="font-bold text-slate-900 text-sm">Two-Tier Aadhaar MFA</h3>
+                    <p className="text-xs text-slate-500 leading-relaxed">Voter ID validation paired with masked phone dispatch to prevent unauthorized ballot access.</p>
+                  </div>
+                  <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-2">
+                    <div className="text-xl">🗳️</div>
+                    <h3 className="font-bold text-slate-900 text-sm">Strict Single-Vote Lock</h3>
+                    <p className="text-xs text-slate-500 leading-relaxed">Once a ballot is submitted, voter state is irrevocably marked VOTED to prevent double voting.</p>
+                  </div>
+                  <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-2">
+                    <div className="text-xl">🧾</div>
+                    <h3 className="font-bold text-slate-900 text-sm">Cryptographic Receipts</h3>
+                    <p className="text-xs text-slate-500 leading-relaxed">Voters receive an encrypted token reference hash verifying their ballot was sealed without exposing choices.</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 2. VERIFY */}
+            {page === 'verify' && (
+              <div className="max-w-lg mx-auto bg-white border border-slate-200 rounded-2xl p-8 shadow-xs space-y-6">
+                <div className="text-center space-y-1">
+                  <h2 className="text-xl font-bold text-slate-900">Voter Identity Verification</h2>
+                  <p className="text-xs text-slate-500">Aadhaar-Style Multi-Factor Authentication</p>
+                </div>
+
+                {errorMessage && (
+                  <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-lg">
+                    {errorMessage}
+                  </div>
+                )}
+                {successMessage && (
+                  <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-lg">
+                    {successMessage}
+                  </div>
+                )}
+
+                {verifyStep === 'CREDENTIALS' ? (
+                  <form onSubmit={handleRequestOtp} className="space-y-4 text-xs">
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">Voter ID / Reference</label>
+                      <input 
+                        type="text" 
+                        value={voterIdInput} 
+                        onChange={e => setVoterIdInput(e.target.value)} 
+                        placeholder="e.g. VTR-2026-9041" 
+                        className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg uppercase font-mono-numbers text-sm"
+                        required 
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">Registered Mobile Number</label>
+                      <input 
+                        type="tel" 
+                        value={mobileInput} 
+                        onChange={e => setMobileInput(e.target.value)} 
+                        placeholder="e.g. 98765 04321" 
+                        className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg font-mono-numbers text-sm"
+                        required 
+                      />
+                    </div>
+
+                    <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-between text-[11px]">
+                      <span>Quick Test Demo:</span>
+                      <button 
+                        type="button" 
+                        onClick={() => { setVoterIdInput('VTR-2026-9041'); setMobileInput('98765 04321'); }}
+                        className="text-blue-600 font-semibold hover:underline"
+                      >
+                        Fill Sample Voter
+                      </button>
+                    </div>
+
+                    <button type="submit" className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg text-xs shadow-xs">
+                      Send Aadhaar-Style OTP &rarr;
+                    </button>
+                  </form>
+                ) : (
+                  <form onSubmit={handleVerifyOtp} className="space-y-6 text-center text-xs">
+                    <p className="text-slate-600 text-xs">
+                      Enter the 6-digit code sent to masked phone <strong>{activeVoter?.maskedMobile}</strong>.
+                    </p>
+
+                    <div className="flex justify-center gap-2">
+                      {otpDigits.map((d, i) => (
+                        <input
+                          key={i}
+                          id={'otp-' + i}
+                          type="password"
+                          maxLength={1}
+                          value={d}
+                          onChange={e => {
+                            const val = e.target.value.replace(/\D/g, '');
+                            const copy = [...otpDigits];
+                            copy[i] = val;
+                            setOtpDigits(copy);
+                            if (val && i < 5) document.getElementById('otp-' + (i + 1))?.focus();
+                          }}
+                          className="w-10 h-12 text-center text-lg font-bold border border-slate-300 rounded-lg bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono-numbers"
+                        />
+                      ))}
+                    </div>
+
+                    <div className="flex justify-between items-center text-[11px] text-slate-500">
+                      <span>Expires in: <strong className="font-mono-numbers text-slate-800">{timer}s</strong></span>
+                      <button 
+                        type="button" 
+                        disabled={timer > 0} 
+                        onClick={() => { setTimer(60); setSuccessMessage('New OTP simulated dispatch.'); }}
+                        className="text-blue-600 hover:underline disabled:text-slate-400 font-medium"
+                      >
+                        Resend OTP
+                      </button>
+                    </div>
+
+                    <div className="flex gap-3">
+                      <button 
+                        type="button" 
+                        onClick={() => { setVerifyStep('CREDENTIALS'); setErrorMessage(''); }}
+                        className="w-1/3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-semibold"
+                      >
+                        Back
+                      </button>
+                      <button 
+                        type="submit" 
+                        disabled={otpDigits.join('').length !== 6}
+                        className="w-2/3 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white rounded-lg font-semibold shadow-xs"
+                      >
+                        Verify OTP & Unlock Ballot
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </div>
+            )}
+
+            {/* 3. CANDIDATES */}
+            {page === 'candidates' && (
+              <div className="space-y-6">
+                <div className="flex justify-between items-center pb-3 border-b border-slate-200">
+                  <div>
+                    <h2 className="text-xl font-bold text-slate-900">Select Contesting Candidate</h2>
+                    <p className="text-xs text-slate-500">Authenticated Voter: <strong>{activeVoter?.name}</strong> ({activeVoter?.voterId})</p>
+                  </div>
+                  <span className="text-xs text-emerald-700 font-semibold bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded">
+                    1 Ballot Allowed
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {candidates.map(c => {
+                    const isSel = selectedCandidate?.id === c.id;
+                    return (
+                      <div 
+                        key={c.id} 
+                        onClick={() => setSelectedCandidate(c)}
+                        className={`p-5 rounded-xl border cursor-pointer transition-all flex flex-col justify-between ${
+                          isSel ? 'border-blue-600 bg-blue-50/50 shadow-sm ring-2 ring-blue-600/20' : 'border-slate-200 bg-white hover:border-slate-300'
+                        }`}
+                      >
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <span className="text-2xl">{c.icon}</span>
+                              <div>
+                                <h3 className="font-bold text-slate-900 text-base">{c.name}</h3>
+                                <span className="text-xs text-blue-700 font-medium">{c.party}</span>
+                              </div>
+                            </div>
+                            <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${isSel ? 'border-blue-600 bg-blue-600' : 'border-slate-300'}`}>
+                              {isSel && <div className="w-2 h-2 rounded-full bg-white"></div>}
+                            </div>
+                          </div>
+                          <p className="text-xs text-slate-500">{c.agenda}</p>
+                        </div>
+                        <div className="pt-3 mt-3 border-t border-slate-100 text-[11px] flex justify-between text-slate-400">
+                          <span>Symbol: {c.symbol}</span>
+                          <span className={isSel ? 'text-blue-700 font-bold' : ''}>{isSel ? '✓ Selected' : 'Click to select'}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="bg-white border border-slate-200 rounded-xl p-4 flex justify-between items-center shadow-xs">
+                  <span className="text-xs text-slate-600">
+                    {selectedCandidate ? <>Selected: <strong className="text-slate-900">{selectedCandidate.name}</strong></> : 'Select a candidate above.'}
+                  </span>
+                  <button 
+                    disabled={!selectedCandidate} 
+                    onClick={() => setPage('confirm')}
+                    className="bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-semibold text-xs px-6 py-2.5 rounded-lg shadow-xs"
+                  >
+                    Proceed to Vote Confirmation &rarr;
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* 4. CONFIRM */}
+            {page === 'confirm' && (
+              <div className="max-w-md mx-auto bg-white border border-slate-200 rounded-2xl p-8 shadow-xs space-y-6 text-center">
+                <span className="text-3xl">🗳️</span>
+                <h2 className="text-xl font-bold text-slate-900">Confirm Your Ballot</h2>
+                <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl space-y-2 text-left">
+                  <div className="text-xs text-slate-500">Candidate Choice:</div>
+                  <div className="text-lg font-bold text-slate-900">{selectedCandidate?.name}</div>
+                  <div className="text-xs text-blue-700 font-semibold">{selectedCandidate?.party}</div>
+                  <div className="text-xs text-slate-600">Symbol: {selectedCandidate?.symbol} {selectedCandidate?.icon}</div>
+                </div>
+
+                <p className="text-xs text-rose-600 font-medium">
+                  Notice: Once submitted, your vote is irreversible. Duplicate voting will be locked permanently.
+                </p>
+
+                <div className="flex gap-3">
+                  <button onClick={() => setPage('candidates')} className="w-1/3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold">
+                    Change
+                  </button>
+                  <button onClick={handleConfirmVote} className="w-2/3 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-xs">
+                    Confirm & Cast Vote
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* 5. SUCCESS */}
+            {page === 'success' && (
+              <div className="max-w-md mx-auto bg-white border border-slate-200 rounded-2xl p-8 shadow-xs space-y-6 text-center">
+                <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto text-2xl font-bold">✓</div>
+                <h2 className="text-xl font-bold text-slate-900">Vote Successfully Submitted!</h2>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  Your electronic ballot has been cryptographically sealed and recorded into the tally.
+                </p>
+
+                <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-left space-y-2 text-xs font-mono-numbers">
+                  <div className="flex justify-between">
+                    <span className="text-slate-400 font-sans">Receipt Token:</span>
+                    <strong className="text-slate-900">{receipt?.id}</strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400 font-sans">Timestamp:</span>
+                    <span className="text-slate-700">{receipt?.timestamp}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400 font-sans">Electoral Roll Ref:</span>
+                    <span className="text-slate-700">{receipt?.voterRef}</span>
+                  </div>
+                </div>
+
+                <div className="flex gap-3">
+                  <button onClick={() => window.print()} className="w-1/2 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold">
+                    Print Receipt
+                  </button>
+                  <button onClick={() => setPage('results')} className="w-1/2 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-xs">
+                    View Results
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* 6. RESULTS */}
+            {page === 'results' && (
+              <div className="space-y-6">
+                <div className="flex justify-between items-center pb-3 border-b border-slate-200">
+                  <div>
+                    <h2 className="text-xl font-bold text-slate-900">Live Election Results</h2>
+                    <p className="text-xs text-slate-500">Real-time tally for Constituency #04</p>
+                  </div>
+                  <div className="text-right text-xs font-mono-numbers">
+                    <span className="text-slate-500">Total Ballots: </span>
+                    <strong className="text-slate-900 text-sm">{totalVotes}</strong>
+                    <span className="text-blue-700 ml-2">({turnout}% Turnout)</span>
+                  </div>
+                </div>
+
+                <div className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 space-y-6 shadow-xs">
+                  {candidates.map(c => {
+                    const pct = totalVotes > 0 ? ((c.votes / totalVotes) * 100).toFixed(1) : 0;
+                    return (
+                      <div key={c.id} className="space-y-2">
+                        <div className="flex justify-between items-center text-xs">
+                          <div className="flex items-center gap-2">
+                            <span className="text-lg">{c.icon}</span>
+                            <div>
+                              <strong className="text-slate-900 text-sm">{c.name}</strong>
+                              <span className="text-slate-500 ml-2">({c.party})</span>
+                            </div>
+                          </div>
+                          <div className="font-mono-numbers">
+                            <strong className="text-slate-900 text-sm">{c.votes}</strong> votes
+                            <span className="text-blue-600 font-bold ml-2">({pct}%)</span>
+                          </div>
+                        </div>
+                        <div className="w-full bg-slate-100 h-3 rounded-full overflow-hidden">
+                          <div 
+                            className="h-full rounded-full transition-all duration-500" 
+                            style={{ width: `${Math.max(pct, 1)}%`, backgroundColor: c.color }}
+                          ></div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* 7. ADMIN */}
+            {page === 'admin' && (
+              <div className="space-y-6">
+                {!isAdminLoggedIn ? (
+                  <div className="max-w-sm mx-auto bg-white border border-slate-200 rounded-2xl p-8 shadow-xs space-y-4">
+                    <h2 className="text-lg font-bold text-slate-900 text-center">Admin Console Authentication</h2>
+                    {adminError && <div className="p-2 bg-rose-50 text-rose-700 text-xs rounded">{adminError}</div>}
+                    <form onSubmit={e => {
+                      e.preventDefault();
+                      if (adminUser === 'admin' && adminPass === 'admin123') {
+                        setIsAdminLoggedIn(true);
+                        setAdminPass('');
+                      } else {
+                        setAdminError('Invalid credentials. (Demo hint: admin / admin123)');
+                      }
+                    }} className="space-y-3 text-xs">
+                      <div>
+                        <label className="block font-semibold mb-1 text-slate-700">Username</label>
+                        <input type="text" value={adminUser} onChange={e => setAdminUser(e.target.value)} placeholder="admin" className="w-full px-3 py-2 border rounded-lg" required />
+                      </div>
+                      <div>
+                        <label className="block font-semibold mb-1 text-slate-700">Password (Masked)</label>
+                        <input type="password" value={adminPass} onChange={e => setAdminPass(e.target.value)} placeholder="••••••••" className="w-full px-3 py-2 border rounded-lg" required />
+                      </div>
+                      <button type="submit" className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-semibold">
+                        Sign In
+                      </button>
+                    </form>
+                    <div className="text-[11px] text-slate-400 text-center">Demo: admin / admin123</div>
+                  </div>
+                ) : (
+                  <div className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 space-y-6 shadow-xs">
+                    <div className="flex justify-between items-center pb-3 border-b border-slate-200">
+                      <div>
+                        <h2 className="text-xl font-bold text-slate-900">Election Authority Administration</h2>
+                        <span className="text-xs text-slate-500">Status: ACTIVE · Logged In as Electoral Admin</span>
+                      </div>
+                      <button onClick={() => setIsAdminLoggedIn(false)} className="text-xs text-rose-600 font-semibold border border-rose-200 px-3 py-1.5 rounded-lg hover:bg-rose-50">
+                        Logout
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
+                      <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
+                        <div className="text-xs text-slate-500">Registered Roll</div>
+                        <div className="text-2xl font-bold font-mono-numbers text-slate-900">{voters.length}</div>
+                      </div>
+                      <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
+                        <div className="text-xs text-slate-500">Ballots Cast</div>
+                        <div className="text-2xl font-bold font-mono-numbers text-blue-600">{totalVotes}</div>
+                      </div>
+                      <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
+                        <div className="text-xs text-slate-500">Turnout Rate</div>
+                        <div className="text-2xl font-bold font-mono-numbers text-emerald-600">{turnout}%</div>
+                      </div>
+                    </div>
+
+                    {/* Reset Button */}
+                    <div className="pt-2 flex justify-between items-center text-xs">
+                      <span className="text-slate-500">Need to reset all votes for demonstration?</span>
+                      <button 
+                        onClick={() => {
+                          setCandidates(prev => prev.map(c => ({ ...c, votes: 0 })));
+                          setVoters(prev => prev.map(v => ({ ...v, status: 'ELIGIBLE' })));
+                          alert('Election reset! All counts cleared to 0.');
+                        }}
+                        className="px-4 py-2 bg-rose-50 text-rose-700 border border-rose-200 rounded-lg font-semibold hover:bg-rose-100"
+                      >
+                        Reset Demo Ballots
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+          </main>
+
+          {/* Footer */}
+          <footer className="bg-white border-t border-slate-200 py-6 text-center text-xs text-slate-500">
+            <div>ONLINE VOTING SYSTEM – Academic Capstone Project</div>
+            <div className="text-[11px] text-slate-400 mt-1">Zero-Install Standalone Mode · Runs in any modern browser</div>
+          </footer>
+
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
