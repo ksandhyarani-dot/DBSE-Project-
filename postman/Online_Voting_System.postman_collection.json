@@ -1,0 +1,239 @@
+{
+  "info": {
+    "_postman_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "name": "ONLINE VOTING SYSTEM – Aadhaar OTP Backend API",
+    "description": "Complete Postman API Collection for testing the Online Voting System backend (Flask, FastAPI, or Node.js). Pre-configured with sample payloads, variables, and assertions.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000",
+      "type": "string"
+    },
+    {
+      "key": "demoVoterId",
+      "value": "VTR-2026-9041",
+      "type": "string"
+    },
+    {
+      "key": "demoMobile",
+      "value": "98765 04321",
+      "type": "string"
+    },
+    {
+      "key": "demoCandidateId",
+      "value": "cand-02",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "0. System Health",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "health"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "1. Voter Authentication & OTP",
+      "item": [
+        {
+          "name": "Step 1: Request Aadhaar-Style OTP",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"voterId\": \"{{demoVoterId}}\",\n  \"mobileNumber\": \"{{demoMobile}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/voters/request-otp",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "voters", "request-otp"]
+            },
+            "description": "Validates voter roll entry and dispatches simulated 6-digit OTP to masked mobile. Notice: OTP value is never returned in response."
+          },
+          "response": []
+        },
+        {
+          "name": "Step 2: Verify OTP Code",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"voterId\": \"{{demoVoterId}}\",\n  \"otp\": \"123456\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/voters/verify-otp",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "voters", "verify-otp"]
+            },
+            "description": "Authenticates the 6-digit OTP and unlocks the electronic ballot. For academic evaluation, code 123456 is pre-accepted."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "2. Ballot & Candidates",
+      "item": [
+        {
+          "name": "Get All Contesting Candidates",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/candidates",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "candidates"]
+            },
+            "description": "Returns all registered candidates with symbols, agendas, and current votes."
+          },
+          "response": []
+        },
+        {
+          "name": "Cast Electronic Ballot",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"voterId\": \"{{demoVoterId}}\",\n  \"candidateId\": \"{{demoCandidateId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/ballot/cast",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "ballot", "cast"]
+            },
+            "description": "Submits single vote. Atomically locks voter to VOTED and generates tamper-evident receipt token."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "3. Election Results & Analytics",
+      "item": [
+        {
+          "name": "Get Real-Time Election Results",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/election/results",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "election", "results"]
+            },
+            "description": "Returns candidate tallies, total votes cast, and calculated voter turnout percentage."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Registered Voters List",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/voters",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "voters"]
+            },
+            "description": "Retrieves electoral roll with masked Aadhaar and mobile credentials."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "4. Admin Console Operations",
+      "item": [
+        {
+          "name": "Admin Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"admin123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "login"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Reset Election Tallies (Demo Utility)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/reset",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "reset"]
+            },
+            "description": "Clears all votes back to 0 and resets voters to ELIGIBLE."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Security Audit Logs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/audit-logs",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "audit-logs"]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
