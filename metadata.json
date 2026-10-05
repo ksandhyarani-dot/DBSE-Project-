@@ -1,0 +1,6 @@
+{
+  "name": "Online Voting System - Aadhaar OTP Verification",
+  "description": "A modern, secure academic prototype frontend for an online voting system featuring simulated Aadhaar-style multi-factor OTP verification, single-choice ballot casting, verifiable receipt generation, live tally results, and an administrative election management console.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
